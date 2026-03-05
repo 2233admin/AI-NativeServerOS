@@ -1,10 +1,11 @@
 """P1: Natural Language -> Structured Intent.
 
-Uses OpenClaw FreeClaw three-tier routing:
-  claude -> doubao -> minimax
+Three-tier LLM routing (cost-optimized):
+  Tier 1: doubao-seed-2.0-code (free/cheap, Volcengine)
+  Tier 2: claude-sonnet-4-6 (via yunyi proxy)
+  Tier 3: minimax-M2.5 (fallback)
 
-Phase 1: instructor + structured output
-Phase 2+: smolagents for multi-step reasoning
+Falls back to rule-based parsing if all LLM tiers fail.
 """
 
 from __future__ import annotations
@@ -16,9 +17,30 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-# FreeClaw routing via OpenAI-compatible API
-FREECLAW_BASE = os.environ.get("FREECLAW_BASE_URL", "http://127.0.0.1:18789/v1")
-FREECLAW_KEY = os.environ.get("FREECLAW_API_KEY", "")
+# Three-tier LLM provider config (loaded from env or defaults)
+LLM_PROVIDERS = [
+    {
+        "name": "doubao",
+        "base_url": os.environ.get("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding"),
+        "api_key": os.environ.get("DOUBAO_API_KEY", ""),
+        "model": "doubao-seed-2.0-code",
+        "api": "anthropic",  # anthropic messages format
+    },
+    {
+        "name": "yunyi-claude",
+        "base_url": os.environ.get("YUNYI_BASE_URL", ""),
+        "api_key": os.environ.get("YUNYI_API_KEY", ""),
+        "model": "claude-sonnet-4-6",
+        "api": "anthropic",
+    },
+    {
+        "name": "minimax",
+        "base_url": os.environ.get("MINIMAX_BASE_URL", ""),
+        "api_key": os.environ.get("MINIMAX_API_KEY", ""),
+        "model": "MiniMax-M2.5",
+        "api": "anthropic",
+    },
+]
 
 VALID_ACTIONS = {"install", "edit", "restart", "run", "check"}
 
@@ -86,35 +108,51 @@ def parse_nl(nl_input: str) -> ParsedIntent:
 
 
 def _parse_via_llm(nl_input: str) -> ParsedIntent:
-    """Use FreeClaw LLM routing to parse intent."""
+    """Try each LLM provider in tier order until one succeeds."""
     try:
         import httpx
     except ImportError:
         raise RuntimeError("httpx not installed")
 
+    last_error = None
+    for provider in LLM_PROVIDERS:
+        if not provider["api_key"]:
+            continue
+        try:
+            content = _call_anthropic_api(httpx, provider, nl_input)
+            # Strip markdown code fences if present
+            if content.startswith("```"):
+                content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            parsed = json.loads(content)
+            return _build_intent(nl_input, parsed)
+        except Exception as e:
+            last_error = e
+            continue
+
+    raise last_error or RuntimeError("No LLM providers configured")
+
+
+def _call_anthropic_api(httpx, provider: dict, nl_input: str) -> str:
+    """Call an Anthropic Messages API compatible endpoint."""
     resp = httpx.post(
-        f"{FREECLAW_BASE}/chat/completions",
-        headers={"Authorization": f"Bearer {FREECLAW_KEY}"},
+        f"{provider['base_url']}/v1/messages",
+        headers={
+            "x-api-key": provider["api_key"],
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        },
         json={
-            "model": "claude-proxy/claude-sonnet-4",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": nl_input},
-            ],
+            "model": provider["model"],
+            "system": SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": nl_input}],
             "temperature": 0,
             "max_tokens": 200,
         },
         timeout=15.0,
     )
     resp.raise_for_status()
-
-    content = resp.json()["choices"][0]["message"]["content"].strip()
-    # Strip markdown code fences if present
-    if content.startswith("```"):
-        content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-
-    parsed = json.loads(content)
-    return _build_intent(nl_input, parsed)
+    data = resp.json()
+    return data["content"][0]["text"].strip()
 
 
 def _parse_rule_based(nl_input: str) -> ParsedIntent:
