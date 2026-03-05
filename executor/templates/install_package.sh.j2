@@ -1,0 +1,70 @@
+{# A2Alaw Install Package Template
+   Inspired by Arch PKGBUILD: declarative, idempotent, verifiable
+   Phases: pre_check → execute → post_verify (like prepare/build/check)
+#}
+#!/bin/bash
+set -euo pipefail
+
+# ── Metadata (PKGBUILD-style) ──
+# target:    {{ target }}
+# manager:   {{ manager | default('apt') }}
+# flags:     {{ flags | default('') }}
+# timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+{% set mgr = manager | default('apt') %}
+{% set pkg = target %}
+
+# ── Phase 1: pre_check (prepare) ──
+{% if mgr == 'apt' %}
+if dpkg -l {{ pkg }} 2>/dev/null | grep -q '^ii'; then
+    echo "SKIP: {{ pkg }} already installed"
+    dpkg -l {{ pkg }} | tail -1
+    exit 0
+fi
+{% elif mgr == 'pip' %}
+if python3 -c "import {{ pkg.replace('-','_') }}" 2>/dev/null; then
+    echo "SKIP: {{ pkg }} already available"
+    pip3 show {{ pkg }} 2>/dev/null | head -3
+    exit 0
+fi
+{% elif mgr == 'npm' %}
+if npm list -g {{ pkg }} 2>/dev/null | grep -q {{ pkg }}; then
+    echo "SKIP: {{ pkg }} already installed globally"
+    exit 0
+fi
+{% elif mgr == 'pacman' %}
+if pacman -Qi {{ pkg }} &>/dev/null; then
+    echo "SKIP: {{ pkg }} already installed"
+    pacman -Qi {{ pkg }} | head -3
+    exit 0
+fi
+{% endif %}
+
+# ── Phase 2: execute (build) ──
+{% if mgr == 'apt' %}
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq --no-install-recommends {{ pkg }} {{ flags | default('') }}
+{% elif mgr == 'pip' %}
+pip3 install --no-cache-dir {{ pkg }} {{ flags | default('') }}
+{% elif mgr == 'npm' %}
+npm install -g {{ pkg }} {{ flags | default('') }}
+{% elif mgr == 'pacman' %}
+pacman -S --noconfirm --needed {{ pkg }} {{ flags | default('') }}
+{% elif mgr == 'dnf' %}
+dnf install -y {{ pkg }} {{ flags | default('') }}
+{% endif %}
+
+# ── Phase 3: post_verify (check) ──
+{% if mgr == 'apt' %}
+dpkg -l {{ pkg }} | tail -1
+{% elif mgr == 'pip' %}
+pip3 show {{ pkg }} | head -3
+{% elif mgr == 'npm' %}
+npm list -g {{ pkg }} | tail -1
+{% elif mgr == 'pacman' %}
+pacman -Qi {{ pkg }} | head -3
+{% elif mgr == 'dnf' %}
+rpm -qi {{ pkg }} | head -3
+{% endif %}
+echo "OK: {{ pkg }} installed successfully"

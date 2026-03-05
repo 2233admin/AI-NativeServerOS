@@ -1,0 +1,46 @@
+{# A2Alaw Status Check Template
+   Comprehensive status gathering (Arch-style: verbose, informative)
+#}
+#!/bin/bash
+set -euo pipefail
+
+# ── Metadata ──
+# target: {{ target }}
+
+{% set tgt = target %}
+
+echo "=== Status: {{ tgt }} ==="
+
+# Try as systemd service
+if systemctl list-unit-files 2>/dev/null | grep -q "{{ tgt }}"; then
+    echo "--- systemd service ---"
+    systemctl is-active {{ tgt }} 2>/dev/null || true
+    systemctl status {{ tgt }} --no-pager -l 2>&1 | head -10
+fi
+
+# Try as installed package
+{% if distro | default('debian') == 'debian' %}
+if dpkg -l {{ tgt }} 2>/dev/null | grep -q '^ii'; then
+    echo "--- package (dpkg) ---"
+    dpkg -l {{ tgt }} | tail -1
+fi
+{% elif distro | default('debian') == 'arch' %}
+if pacman -Qi {{ tgt }} &>/dev/null; then
+    echo "--- package (pacman) ---"
+    pacman -Qi {{ tgt }} | head -5
+fi
+{% endif %}
+
+# Try as running process
+if pgrep -x {{ tgt }} >/dev/null 2>&1; then
+    echo "--- process ---"
+    pgrep -ax {{ tgt }}
+fi
+
+# Try as port listener
+if ss -tlnp 2>/dev/null | grep -q {{ tgt }}; then
+    echo "--- listening ---"
+    ss -tlnp | grep {{ tgt }}
+fi
+
+echo "=== Done ==="

@@ -1,0 +1,17 @@
+{# A2Alaw Run Command Template
+   Minimal wrapper with timeout and output capture
+#}
+#!/bin/bash
+set -euo pipefail
+
+# ── Metadata ──
+# command: {{ target }}
+# timeout: {{ timeout_s | default(30) }}s
+# workdir: {{ workdir | default('/tmp') }}
+
+{% if workdir is defined %}
+cd "{{ workdir }}"
+{% endif %}
+
+# ── Execute with timeout ──
+timeout {{ timeout_s | default(30) }} bash -c '{{ target }}'

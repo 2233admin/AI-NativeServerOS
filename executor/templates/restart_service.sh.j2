@@ -1,0 +1,50 @@
+{# A2Alaw Service Management Template
+   Arch-style: check → act → verify, with systemd integration
+#}
+#!/bin/bash
+set -euo pipefail
+
+# ── Metadata ──
+# target: {{ target }}
+# action: {{ action | default('restart') }}
+
+{% set svc = target %}
+{% set act = action | default('restart') %}
+
+# ── Phase 1: pre_check ──
+echo "--- Before ---"
+systemctl is-active {{ svc }} 2>/dev/null && echo "STATUS: active" || echo "STATUS: inactive"
+{% if act == 'restart' or act == 'reload' %}
+# Validate config before restart (service-specific)
+{% if svc == 'nginx' %}
+nginx -t 2>&1 || { echo "ERROR: nginx config test failed"; exit 1; }
+{% elif svc == 'sshd' or svc == 'ssh' %}
+sshd -t 2>&1 || { echo "ERROR: sshd config test failed"; exit 1; }
+{% elif svc == 'redis' or svc == 'redis-server' %}
+redis-cli ping 2>/dev/null || true
+{% elif svc == 'postgresql' or svc == 'postgres' %}
+pg_isready 2>/dev/null || true
+{% endif %}
+{% endif %}
+
+# ── Phase 2: execute ──
+{% if act == 'restart' %}
+systemctl restart {{ svc }}
+{% elif act == 'start' %}
+systemctl start {{ svc }}
+{% elif act == 'stop' %}
+systemctl stop {{ svc }}
+{% elif act == 'reload' %}
+systemctl reload {{ svc }}
+{% elif act == 'enable' %}
+systemctl enable --now {{ svc }}
+{% elif act == 'disable' %}
+systemctl disable --now {{ svc }}
+{% endif %}
+
+# ── Phase 3: post_verify ──
+sleep 1
+echo "--- After ---"
+systemctl is-active {{ svc }}
+systemctl status {{ svc }} --no-pager -l 2>&1 | head -8
+echo "OK: {{ svc }} {{ act }}ed successfully"

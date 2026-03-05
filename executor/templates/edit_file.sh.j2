@@ -1,0 +1,72 @@
+{# A2Alaw Edit File Template
+   Arch-style: backup before modify, atomic write, verify
+#}
+#!/bin/bash
+set -euo pipefail
+
+# ── Metadata ──
+# target: {{ target }}
+# mode:   {{ mode | default('overwrite') }}
+
+{% set file = target %}
+
+# ── Phase 1: pre_check ──
+{% if mode | default('overwrite') == 'append' %}
+# Append mode: file must exist
+if [ ! -f "{{ file }}" ]; then
+    echo "ERROR: {{ file }} does not exist (append mode)"
+    exit 1
+fi
+{% endif %}
+
+# Backup original (like pacnew)
+if [ -f "{{ file }}" ]; then
+    cp -p "{{ file }}" "{{ file }}.a2alaw-bak"
+    echo "BACKUP: {{ file }}.a2alaw-bak"
+fi
+
+# ── Phase 2: execute ──
+{% if mode | default('overwrite') == 'overwrite' %}
+cat > "{{ file }}" << 'A2ALAW_EOF'
+{{ content }}
+A2ALAW_EOF
+{% elif mode == 'append' %}
+cat >> "{{ file }}" << 'A2ALAW_EOF'
+{{ content }}
+A2ALAW_EOF
+{% elif mode == 'sed' %}
+sed -i '{{ sed_expr }}' "{{ file }}"
+{% elif mode == 'lineinfile' %}
+{# Ansible-inspired: ensure a line exists in file #}
+if grep -qF '{{ line }}' "{{ file }}" 2>/dev/null; then
+    echo "SKIP: line already present"
+else
+    echo '{{ line }}' >> "{{ file }}"
+    echo "ADDED: line to {{ file }}"
+fi
+{% endif %}
+
+# Set permissions if specified
+{% if owner is defined %}
+chown {{ owner }} "{{ file }}"
+{% endif %}
+{% if permissions is defined %}
+chmod {{ permissions }} "{{ file }}"
+{% endif %}
+
+# ── Phase 3: post_verify ──
+echo "--- {{ file }} ---"
+{% if mode | default('overwrite') == 'overwrite' %}
+head -5 "{{ file }}"
+{% elif mode == 'append' %}
+tail -3 "{{ file }}"
+{% elif mode == 'sed' or mode == 'lineinfile' %}
+grep -n '{{ line | default(sed_expr | default("")) }}' "{{ file }}" || true
+{% endif %}
+echo "---"
+
+# Diff against backup
+if [ -f "{{ file }}.a2alaw-bak" ]; then
+    diff "{{ file }}.a2alaw-bak" "{{ file }}" || true
+fi
+echo "OK: {{ file }} modified"
