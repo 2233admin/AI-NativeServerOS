@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A2Alaw Intent",
+  "description": "P1: Natural Language -> Structured Intent",
+  "type": "object",
+  "required": ["id", "nl_input", "intent", "confidence", "timestamp"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "nl_input": { "type": "string", "description": "Original natural language input" },
+    "intent": {
+      "type": "object",
+      "required": ["action", "target"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["install", "edit", "restart", "run", "check"]
+        },
+        "target": { "type": "string" },
+        "params": { "type": "object", "additionalProperties": true },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "timeout_s": { "type": "integer", "default": 30 },
+            "dry_run": { "type": "boolean", "default": false },
+            "require_approval": { "type": "boolean", "default": true }
+          }
+        }
+      }
+    },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "risk_level": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string" }
+  }
+}

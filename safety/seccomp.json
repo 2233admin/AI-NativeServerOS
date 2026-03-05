@@ -1,0 +1,28 @@
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "syscalls": [
+    {
+      "names": [
+        "mount", "umount2", "reboot", "swapon", "swapoff",
+        "insmod", "init_module", "finit_module", "delete_module",
+        "kexec_load", "kexec_file_load",
+        "pivot_root", "chroot",
+        "ptrace", "process_vm_readv", "process_vm_writev",
+        "bpf", "perf_event_open", "lookup_dcookie",
+        "keyctl", "request_key", "add_key",
+        "nfsservctl", "quotactl", "acct",
+        "settimeofday", "adjtimex", "clock_settime",
+        "sethostname", "setdomainname",
+        "iopl", "ioperm", "create_module",
+        "query_module", "get_kernel_syms",
+        "uselib", "personality",
+        "syslog", "vhangup",
+        "unshare", "setns",
+        "userfaultfd", "io_uring_setup", "io_uring_enter", "io_uring_register"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [],
+      "comment": "Block 44 dangerous syscalls for sandbox isolation"
+    }
+  ]
+}

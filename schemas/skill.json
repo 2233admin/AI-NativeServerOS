@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A2Alaw Atomic Skill",
+  "type": "object",
+  "required": ["name", "version", "action", "inputs", "outputs"],
+  "properties": {
+    "name": { "type": "string" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "action": {
+      "type": "string",
+      "enum": ["install_package", "edit_file", "restart_service", "run_command", "check_status"]
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } }
+      },
+      "required": ["target"]
+    },
+    "outputs": {
+      "type": "object",
+      "properties": {
+        "stdout": { "type": "string" },
+        "stderr": { "type": "string" },
+        "exit_code": { "type": "integer" },
+        "changed": { "type": "boolean" },
+        "diff": { "type": "string" }
+      }
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "rollback": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string" },
+        "snapshot_id": { "type": "string" }
+      }
+    }
+  }
+}

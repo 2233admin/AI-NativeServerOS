@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A2Alaw Redis Streams",
+  "description": "Five-channel event bus",
+  "streams": {
+    "user:intent": {
+      "description": "User NL input -> structured intent",
+      "fields": ["id", "nl_input", "session_id", "timestamp"]
+    },
+    "agent:plan": {
+      "description": "Intent -> execution DAG",
+      "fields": ["intent_id", "dag", "risk_score", "requires_approval"]
+    },
+    "system:logs": {
+      "description": "Execution logs from sandbox",
+      "fields": ["task_id", "skill", "status", "stdout", "stderr", "exit_code", "duration_ms"]
+    },
+    "agent:report": {
+      "description": "NL summary of execution results",
+      "fields": ["task_id", "summary_nl", "changed", "rollback_available"]
+    },
+    "agent:audit": {
+      "description": "Git audit trail",
+      "fields": ["task_id", "commit_sha", "diff_summary", "author", "timestamp"]
+    }
+  }
+}

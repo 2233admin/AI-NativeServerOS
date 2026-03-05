@@ -1,0 +1,25 @@
+[project]
+name = "a2alaw"
+version = "0.1.0"
+description = "Natural Language System Control - NL -> System Change -> Git Audit"
+requires-python = ">=3.11"
+dependencies = [
+    "redis>=5.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+llm = [
+    "smolagents>=1.0",
+    "instructor>=1.0",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+a2alawctl = "a2alaw.tui.dialog:interactive_loop"
+
+[tool.ruff]
+line-length = 100
