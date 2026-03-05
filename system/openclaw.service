@@ -1,0 +1,38 @@
+[Unit]
+Description=OpenClaw AI Gateway (System-Level)
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# Non-invasive path redirection via environment variables
+# No source code modification needed — OpenClaw reads these natively
+Environment=OPENCLAW_HOME=/usr/lib/openclaw/core
+Environment=OPENCLAW_CONFIG_PATH=/etc/openclaw
+Environment=OPENCLAW_STATE_DIR=/var/lib/openclaw
+Environment=NODE_OPTIONS=--max-old-space-size=768
+Environment=HOME=/root
+
+ExecStart=/usr/bin/node /usr/lib/openclaw/core/bin/openclaw gateway --port 18789
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Logging
+StandardOutput=append:/var/log/openclaw/gateway-core.log
+StandardError=append:/var/log/openclaw/gateway-error.log
+
+# Lifecycle
+Restart=on-failure
+RestartSec=5
+MemoryMax=1500M
+
+# Security (relaxed for root — tighten with openclaw user later)
+# ProtectSystem=strict
+# ProtectHome=yes
+# ReadWritePaths=/var/lib/openclaw /var/log/openclaw /run/openclaw /root/.openclaw
+RuntimeDirectory=openclaw
+
+[Install]
+WantedBy=multi-user.target

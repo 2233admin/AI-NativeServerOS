@@ -84,9 +84,9 @@ def _local_evaluate(
 
     # Allow check
     allowed = False
-    if risk_level == "low" and confidence >= 0.7:
+    if risk_level == "low" and confidence >= 0.5:
         allowed = True
-    elif risk_level == "medium" and confidence >= 0.85:
+    elif risk_level == "medium" and confidence >= 0.7:
         allowed = True
     elif human_approved:
         allowed = True

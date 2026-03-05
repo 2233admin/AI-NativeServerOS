@@ -14,6 +14,8 @@ STREAMS = [
     "system:logs",
     "agent:report",
     "agent:audit",
+    "mesh:health",
+    "mesh:council",
 ]
 
 

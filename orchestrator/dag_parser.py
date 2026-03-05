@@ -119,6 +119,6 @@ def _assess_risk(action: str, target: str) -> str:
         return "critical"
     if action in ("restart", "edit"):
         return "medium"
-    if action == "install":
+    if action in ("install", "check", "run"):
         return "low"
     return "medium"

@@ -1,0 +1,22 @@
+# A2Alaw Hub Configuration
+listen:
+  host: 127.0.0.1
+  port: 8741
+
+# LLM routing (FreeClaw three-tier)
+llm:
+  primary: doubao      # Free tier
+  secondary: yunyi     # Claude via yunyi proxy
+  fallback: minimax    # Emergency fallback
+
+# Mesh nodes
+mesh:
+  central: 10.10.0.1
+  sv: 10.10.0.2
+  tokyo: 10.10.0.3
+
+# Safety
+safety:
+  opa_url: http://127.0.0.1:8181
+  auto_approve_risk_below: 0.3
+  require_approval_above: 0.6

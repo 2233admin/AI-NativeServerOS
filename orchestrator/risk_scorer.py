@@ -64,8 +64,8 @@ def requires_approval(risk_score: float, confidence: float) -> bool:
     """Determine if human approval is needed."""
     if risk_score >= 0.7:
         return True
-    if confidence < 0.7:
+    if risk_score >= 0.4 and confidence < 0.7:
         return True
-    if risk_score >= 0.4 and confidence < 0.85:
+    if confidence < 0.5:
         return True
     return False

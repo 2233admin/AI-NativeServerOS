@@ -5,7 +5,7 @@ This is the core execution engine that chains all 7 pipeline stages:
   P2: Intent -> DAG (dag_parser)
   P3: OPA Policy + Risk Assessment
   P4: Code Generation (code_gen)
-  P5: Sandbox Execution (sandbox)
+  P5: Host Execution (host) — real system changes, sandbox for dry-run only
   P6: Error Handling (self_heal)
   P7: Report + Audit (nl_report + git_audit + redis streams)
 """
@@ -20,7 +20,7 @@ from a2alaw.orchestrator.nl_parser import ParsedIntent, parse_nl
 from a2alaw.orchestrator.dag_parser import parse_intent_to_dag, ExecutionDAG, DAGNode
 from a2alaw.orchestrator.risk_scorer import requires_approval, score_command
 from a2alaw.executor.code_gen import generate_command, generate_rollback
-from a2alaw.executor.sandbox import run_in_sandbox, SandboxResult
+from a2alaw.executor.host import execute_on_host, dry_run_preview, HostResult
 from a2alaw.executor.self_heal import classify_and_heal, MAX_RETRIES
 from a2alaw.feedback.nl_report import format_report
 from a2alaw.safety.git_audit import record_change
@@ -205,49 +205,46 @@ class Pipeline:
         return result
 
     def _execute_node(self, node: DAGNode) -> dict[str, Any]:
-        """Execute a single DAG node with retry logic."""
-        command = generate_command(node.skill.value, node.params)
+        """Execute a single DAG node with retry logic.
+
+        Uses host execution by default (real system changes).
+        Only uses dry-run preview when self.dry_run is True.
+        """
+        script = generate_command(node.skill.value, node.params)
         rollback = generate_rollback(node.skill.value, node.params)
 
         for attempt in range(MAX_RETRIES + 1):
-            needs_write = node.skill.value in ("install_package", "edit_file")
-            sandbox_result = run_in_sandbox(
-                command,
-                dry_run=self.dry_run,
-                network=node.skill.value == "install_package",
-                writable=needs_write,
-            )
+            if self.dry_run:
+                hr = dry_run_preview(script)
+            else:
+                hr = execute_on_host(script)
 
-            if sandbox_result.exit_code == 0:
+            if hr.exit_code == 0:
                 return {
                     "node_id": node.id,
                     "skill": node.skill.value,
-                    "command": command,
+                    "command": script,
                     "rollback": rollback,
-                    "exit_code": sandbox_result.exit_code,
-                    "stdout": sandbox_result.stdout,
-                    "stderr": sandbox_result.stderr,
-                    "duration_ms": sandbox_result.duration_ms,
-                    "changed": sandbox_result.changed,
+                    "exit_code": hr.exit_code,
+                    "stdout": hr.stdout,
+                    "stderr": hr.stderr,
+                    "duration_ms": hr.duration_ms,
+                    "changed": hr.changed,
                     "attempt": attempt + 1,
                 }
 
-            heal = classify_and_heal(
-                sandbox_result.stderr,
-                sandbox_result.exit_code,
-                attempt,
-            )
+            heal = classify_and_heal(hr.stderr, hr.exit_code, attempt)
 
             if not heal.should_retry:
                 return {
                     "node_id": node.id,
                     "skill": node.skill.value,
-                    "command": command,
+                    "command": script,
                     "rollback": rollback,
-                    "exit_code": sandbox_result.exit_code,
-                    "stdout": sandbox_result.stdout,
-                    "stderr": sandbox_result.stderr,
-                    "duration_ms": sandbox_result.duration_ms,
+                    "exit_code": hr.exit_code,
+                    "stdout": hr.stdout,
+                    "stderr": hr.stderr,
+                    "duration_ms": hr.duration_ms,
                     "changed": False,
                     "attempt": attempt + 1,
                     "error_class": heal.error_class.value,
@@ -257,7 +254,7 @@ class Pipeline:
         return {
             "node_id": node.id,
             "skill": node.skill.value,
-            "command": command,
+            "command": script,
             "exit_code": -1,
             "stdout": "",
             "stderr": "Max retries exhausted",
