@@ -3,11 +3,11 @@
 This is the core execution engine that chains all 7 pipeline stages:
   P1: NL -> Intent (nl_parser)
   P2: Intent -> DAG (dag_parser)
-  P3: Risk Assessment (risk_scorer)
+  P3: OPA Policy + Risk Assessment
   P4: Code Generation (code_gen)
   P5: Sandbox Execution (sandbox)
   P6: Error Handling (self_heal)
-  P7: Report + Audit (nl_report + git_audit)
+  P7: Report + Audit (nl_report + git_audit + redis streams)
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from a2alaw.executor.sandbox import run_in_sandbox, SandboxResult
 from a2alaw.executor.self_heal import classify_and_heal, MAX_RETRIES
 from a2alaw.feedback.nl_report import format_report
 from a2alaw.safety.git_audit import record_change
+from a2alaw.safety.opa_client import evaluate as opa_evaluate
 
 
 @dataclass
@@ -31,6 +32,8 @@ class PipelineResult:
     intent: ParsedIntent
     dag: ExecutionDAG
     approved: bool = False
+    policy_blocked: bool = False
+    policy_reasons: list[str] = field(default_factory=list)
     results: list[dict[str, Any]] = field(default_factory=list)
     report: str = ""
     audit_sha: str | None = None
@@ -50,10 +53,12 @@ class Pipeline:
         dry_run: bool = False,
         auto_approve_low_risk: bool = True,
         approval_fn=None,
+        event_bus=None,
     ):
         self.dry_run = dry_run
         self.auto_approve_low_risk = auto_approve_low_risk
-        self.approval_fn = approval_fn  # callable(action, target, risk) -> bool
+        self.approval_fn = approval_fn
+        self.event_bus = event_bus  # EventBus instance for Redis Streams
 
     def run(self, nl_input: str) -> PipelineResult:
         """Execute the full pipeline for a natural language command."""
@@ -61,15 +66,48 @@ class Pipeline:
 
         # P1: NL -> Intent
         intent = parse_nl(nl_input)
+        self._emit("user:intent", {
+            "id": intent.id,
+            "nl_input": intent.nl_input,
+            "session_id": "cli",
+            "timestamp": intent.timestamp,
+        })
 
         # P2: Intent -> DAG
         dag = parse_intent_to_dag(intent.to_dict())
 
         result = PipelineResult(intent=intent, dag=dag)
 
-        # P3: Risk check + approval
-        needs_approval = requires_approval(dag.risk_score, intent.confidence)
+        # P3: OPA policy check
+        first_cmd = generate_command(
+            dag.topological_order()[-1].skill.value,
+            dag.topological_order()[-1].params,
+        ) if dag.nodes else ""
 
+        policy = opa_evaluate(
+            action=intent.action,
+            target=intent.target,
+            command=first_cmd,
+            risk_level=intent.risk_level,
+            confidence=intent.confidence,
+        )
+
+        if policy.blocked:
+            result.policy_blocked = True
+            result.policy_reasons = policy.deny_reasons
+            reason = "; ".join(policy.deny_reasons) if policy.deny_reasons else "Policy denied"
+            result.report = f"BLOCKED by policy: {reason}"
+            result.total_ms = int((time.monotonic() - start) * 1000)
+            self._emit("agent:plan", {
+                "intent_id": intent.id,
+                "dag": "blocked",
+                "risk_score": dag.risk_score,
+                "requires_approval": True,
+            })
+            return result
+
+        # Risk check + approval (for cases OPA allows but risk scorer flags)
+        needs_approval = requires_approval(dag.risk_score, intent.confidence)
         if needs_approval:
             if self.auto_approve_low_risk and dag.risk_score < 0.3:
                 result.approved = True
@@ -85,10 +123,27 @@ class Pipeline:
         else:
             result.approved = True
 
+        self._emit("agent:plan", {
+            "intent_id": intent.id,
+            "dag": str(dag.to_dict()),
+            "risk_score": dag.risk_score,
+            "requires_approval": False,
+        })
+
         # Execute DAG nodes in topological order
         for node in dag.topological_order():
             node_result = self._execute_node(node)
             result.results.append(node_result)
+
+            self._emit("system:logs", {
+                "task_id": intent.id[:8],
+                "skill": node_result.get("skill", ""),
+                "status": "ok" if node_result["exit_code"] == 0 else "error",
+                "stdout": node_result.get("stdout", "")[:500],
+                "stderr": node_result.get("stderr", "")[:500],
+                "exit_code": node_result["exit_code"],
+                "duration_ms": node_result.get("duration_ms", 0),
+            })
 
             if node_result["exit_code"] != 0:
                 break
@@ -106,6 +161,13 @@ class Pipeline:
             changed=last.get("changed", False),
         )
 
+        self._emit("agent:report", {
+            "task_id": intent.id[:8],
+            "summary_nl": result.report,
+            "changed": last.get("changed", False),
+            "rollback_available": bool(last.get("rollback")),
+        })
+
         # Git audit (skip in dry run)
         if not self.dry_run and result.success:
             try:
@@ -117,22 +179,25 @@ class Pipeline:
                     stdout=last.get("stdout", "")[:500],
                     exit_code=last.get("exit_code", 0),
                 )
+                if result.audit_sha:
+                    self._emit("agent:audit", {
+                        "task_id": intent.id[:8],
+                        "commit_sha": result.audit_sha,
+                        "diff_summary": f"[{intent.action}] {intent.target}",
+                        "author": "a2alaw",
+                        "timestamp": intent.timestamp,
+                    })
             except Exception:
-                pass  # Audit failure is non-fatal
+                pass
 
         result.total_ms = int((time.monotonic() - start) * 1000)
         return result
 
     def _execute_node(self, node: DAGNode) -> dict[str, Any]:
         """Execute a single DAG node with retry logic."""
-        # P4: Code generation
-        command = generate_command(
-            node.skill.value,
-            node.params,
-        )
+        command = generate_command(node.skill.value, node.params)
         rollback = generate_rollback(node.skill.value, node.params)
 
-        # P5: Sandbox execution with P6: retry loop
         for attempt in range(MAX_RETRIES + 1):
             needs_write = node.skill.value in ("install_package", "edit_file")
             sandbox_result = run_in_sandbox(
@@ -156,7 +221,6 @@ class Pipeline:
                     "attempt": attempt + 1,
                 }
 
-            # P6: Error classification + heal
             heal = classify_and_heal(
                 sandbox_result.stderr,
                 sandbox_result.exit_code,
@@ -179,7 +243,6 @@ class Pipeline:
                     "human_needed": heal.human_needed,
                 }
 
-        # Should not reach here, but safety net
         return {
             "node_id": node.id,
             "skill": node.skill.value,
@@ -190,3 +253,12 @@ class Pipeline:
             "duration_ms": 0,
             "changed": False,
         }
+
+    def _emit(self, stream: str, data: dict) -> None:
+        """Publish event to Redis Streams (best-effort)."""
+        if not self.event_bus:
+            return
+        try:
+            self.event_bus.publish(stream, data)
+        except Exception:
+            pass

@@ -40,16 +40,23 @@ def main():
             sys.exit(1)
 
         from a2alaw.pipeline import Pipeline
-        pipe = Pipeline(dry_run=dry_run)
+
+        event_bus = _try_connect_streams()
+        pipe = Pipeline(dry_run=dry_run, event_bus=event_bus)
         result = pipe.run(text)
 
         print(result.report)
+        if result.policy_blocked:
+            print(f"Policy: {'; '.join(result.policy_reasons)}")
         if result.audit_sha:
             print(f"Audit: {result.audit_sha}")
-        print(f"Time: {result.total_ms}ms | Approved: {result.approved} | Success: {result.success}")
+        streams = "connected" if event_bus else "offline"
+        print(f"Time: {result.total_ms}ms | Approved: {result.approved} | Success: {result.success} | Streams: {streams}")
 
-        if not result.success:
+        if not result.success and not result.policy_blocked:
             sys.exit(1)
+        if result.policy_blocked:
+            sys.exit(2)
 
     elif cmd == "interactive":
         from a2alaw.tui.dialog import interactive_loop
@@ -64,6 +71,17 @@ def main():
     else:
         print(f"Unknown command: {cmd}", file=sys.stderr)
         sys.exit(1)
+
+
+def _try_connect_streams():
+    """Try to connect to Redis Streams event bus."""
+    try:
+        from a2alaw.feedback.redis_streams import EventBus
+        bus = EventBus()
+        bus.r.ping()
+        return bus
+    except Exception:
+        return None
 
 
 if __name__ == "__main__":
