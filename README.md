@@ -17,7 +17,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-pink.svg)](LICENSE)
-[![ClawDebian](https://img.shields.io/badge/OS-ClawDebian-purple?logo=debian)](https://github.com)
+[![A2A Claw OS](https://img.shields.io/badge/OS-A2A_Claw_OS-purple?logo=debian)](https://github.com)
 [![OpenClaw](https://img.shields.io/badge/兼容-OpenClaw-orange)](https://github.com)
 
 </div>
@@ -28,7 +28,7 @@
 
 A2Alaw（**Agent-to-Action Law**）不是又一个运维 CLI 工具。
 
-她是一个 **AI 原生的服务器操作系统内核**——为 [ClawDebian](https://github.com) 集群量身定制的治理控制平面。你可以把她想象成服务器世界的「管家少女」：你用自然语言说出想做的事，她来理解、规划、审批、执行、审计，全链路自动化。
+她是一个 **AI 原生的服务器操作系统内核**——为 [A2A Claw OS](https://github.com) 集群量身定制的治理控制平面。你可以把她想象成服务器世界的「管家少女」：你用自然语言说出想做的事，她来理解、规划、审批、执行、审计，全链路自动化。
 
 ```
   你说：「给三台服务器都装上 nginx，配好反向代理」
@@ -126,7 +126,7 @@ OpenClaw 不再是 `npm i -g` 的客人——她是系统的一部分：
 
 ### 前置要求
 
-- Debian 12 (ClawDebian)
+- Debian 12 (A2A Claw OS)
 - Python 3.11+
 - Redis 7+
 - Node.js 22+ (for OpenClaw)
@@ -290,7 +290,7 @@ MIT
 
 <div align="center">
 
-*Built with 💜 for ClawDebian*
+*Built with 💜 for A2A Claw OS*
 
 *「全ての始まりは、一つの言葉から」*
 
