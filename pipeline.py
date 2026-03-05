@@ -54,18 +54,28 @@ class Pipeline:
         auto_approve_low_risk: bool = True,
         approval_fn=None,
         event_bus=None,
+        use_agent: bool = False,
     ):
         self.dry_run = dry_run
         self.auto_approve_low_risk = auto_approve_low_risk
         self.approval_fn = approval_fn
-        self.event_bus = event_bus  # EventBus instance for Redis Streams
+        self.event_bus = event_bus
+        self.use_agent = use_agent  # Use smolagents for multi-step planning
 
     def run(self, nl_input: str) -> PipelineResult:
         """Execute the full pipeline for a natural language command."""
         start = time.monotonic()
 
-        # P1: NL -> Intent
-        intent = parse_nl(nl_input)
+        # P1+P2: NL -> Intent + DAG
+        if self.use_agent:
+            try:
+                from a2alaw.orchestrator.agent import plan_multi_step
+                intent, dag = plan_multi_step(nl_input)
+            except Exception:
+                intent = parse_nl(nl_input)
+                dag = None
+        else:
+            intent = parse_nl(nl_input)
         self._emit("user:intent", {
             "id": intent.id,
             "nl_input": intent.nl_input,
@@ -73,8 +83,9 @@ class Pipeline:
             "timestamp": intent.timestamp,
         })
 
-        # P2: Intent -> DAG
-        dag = parse_intent_to_dag(intent.to_dict())
+        # P2: Intent -> DAG (skip if agent already built it)
+        if not self.use_agent or dag is None:
+            dag = parse_intent_to_dag(intent.to_dict())
 
         result = PipelineResult(intent=intent, dag=dag)
 

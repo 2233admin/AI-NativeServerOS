@@ -21,6 +21,8 @@ def main():
         print("Commands:")
         print("  run <text>       Execute a natural language command (dry-run by default)")
         print("  run! <text>      Execute for real (sandbox)")
+        print("  agent <text>     Multi-step planning via smolagents (dry-run)")
+        print("  agent! <text>    Multi-step planning + real execution")
         print("  interactive      Start Rich TUI dialog")
         print("  init-streams     Initialize Redis Streams")
         print("  test             Run atomic loop test")
@@ -32,8 +34,9 @@ def main():
         from a2alaw.test_loop import test_atomic_loop
         test_atomic_loop()
 
-    elif cmd in ("run", "run!"):
-        dry_run = cmd == "run"
+    elif cmd in ("run", "run!", "agent", "agent!"):
+        dry_run = cmd in ("run", "agent")
+        use_agent = cmd.startswith("agent")
         text = " ".join(args[1:]) if len(args) > 1 else sys.stdin.readline().strip()
         if not text:
             print("Error: no input provided", file=sys.stderr)
@@ -42,7 +45,7 @@ def main():
         from a2alaw.pipeline import Pipeline
 
         event_bus = _try_connect_streams()
-        pipe = Pipeline(dry_run=dry_run, event_bus=event_bus)
+        pipe = Pipeline(dry_run=dry_run, event_bus=event_bus, use_agent=use_agent)
         result = pipe.run(text)
 
         print(result.report)
