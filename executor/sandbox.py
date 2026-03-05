@@ -29,6 +29,7 @@ def run_in_sandbox(
     timeout_s: int = 30,
     memory_mb: int = 200,
     network: bool = True,
+    writable: bool = False,
 ) -> SandboxResult:
     """Execute a command inside a Docker sandbox.
 
@@ -52,10 +53,12 @@ def run_in_sandbox(
         "--memory", f"{memory_mb}m",
         "--cpus", "1",
         "--pids-limit", "100",
-        "--read-only",
         "--tmpfs", "/tmp:size=50m",
         "--security-opt", f"seccomp={SECCOMP_PROFILE}",
     ]
+
+    if not writable:
+        docker_cmd.insert(docker_cmd.index("--tmpfs"), "--read-only")
 
     if not network:
         docker_cmd.extend(["--network", "none"])

@@ -134,10 +134,12 @@ class Pipeline:
 
         # P5: Sandbox execution with P6: retry loop
         for attempt in range(MAX_RETRIES + 1):
+            needs_write = node.skill.value in ("install_package", "edit_file")
             sandbox_result = run_in_sandbox(
                 command,
                 dry_run=self.dry_run,
                 network=node.skill.value == "install_package",
+                writable=needs_write,
             )
 
             if sandbox_result.exit_code == 0:
